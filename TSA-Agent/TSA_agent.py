@@ -2,7 +2,7 @@ import requests
 import json
 import streamlit as st
 
-# API Base URLs
+#API Base URLs
 API_ENDPOINTS = {
     "uniprot": "https://rest.uniprot.org/uniprotkb/search",
     "ncbi_entrez": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
@@ -86,9 +86,8 @@ def chat_with_ollama(prompt):
 
 def get_protein_details(protein_name):
     """Fetch protein details and assess therapeutic target risks using multi-turn AI processing."""
-    print(f"🔍 Searching for protein: {protein_name}...\n")
+    print(f"Searching for protein: {protein_name}...\n")
 
-    # Fetch all data sources
     protein_data = search_protein_databases(protein_name)
     expression_data = search_expression_databases(protein_name)
 
@@ -104,9 +103,8 @@ def get_protein_details(protein_name):
     }
 
     for section, prompt in sections.items():
-        print(f"\n🔍 Generating AI response for: {section}")
+        print(f"\n Generating AI response for: {section}")
         print(chat_with_ollama(prompt))
 
-# Example Usage
 protein_name = input("Enter a protein name or UniProt ID: ")
 get_protein_details(protein_name)
