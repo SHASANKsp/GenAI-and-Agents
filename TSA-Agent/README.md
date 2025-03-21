@@ -42,6 +42,23 @@ This tool retrieves comprehensive information about a given protein, including i
 
 ---
 
+## **Setup Instructions**  
+### **1. Install Ollama**  
+Download and install Ollama from the official website: [https://ollama.com/download](https://ollama.com/download)  
+Verify the installation: `ollama version`
+
+### **2. Start Ollama Server**  
+Run the following command in CMD: `ollama serve`
+
+### **3. Download Llama3 Model**  
+Install it using:  `ollama pull llama3`
+
+### **4. Test Ollama**  
+Run: `ollama run llama3 "Hello, how are you?"`
+
+
+
+---
 ## **AI-Driven Analysis**  
 The tool uses **Llama3 (via Ollama)** for AI-generated insights. It processes each section separately to ensure **multi-turn response generation**.  
 

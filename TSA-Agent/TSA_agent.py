@@ -1,8 +1,9 @@
 import requests
 import json
+import concurrent.futures
 import streamlit as st
 
-#API Base URLs
+# API Base URLs
 API_ENDPOINTS = {
     "uniprot": "https://rest.uniprot.org/uniprotkb/search",
     "ncbi_entrez": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
@@ -13,7 +14,6 @@ API_ENDPOINTS = {
     "alphafold": "https://www.alphafold.ebi.ac.uk/api/prediction",
     "pdb": "https://data.rcsb.org/rest/v1/core/entry",
     "open_targets": "https://api.platform.opentargets.org/api/v4/graphql",
-    "drugbank": "https://go.drugbank.com/structures/small_molecule_drugs/",
     "chembl": "https://www.ebi.ac.uk/chembl/api/data",
     "faers": "https://api.fda.gov/drug/event.json",
     "sider": "http://sideeffects.embl.de/api/drug/",
@@ -31,37 +31,75 @@ API_ENDPOINTS = {
 }
 
 def fetch_api_data(url, params=None):
-    """Fetch data from an API endpoint."""
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
+    """Fetch data from an API endpoint with error handling."""
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
         return response.json()
-    return None
+    except requests.RequestException as e:
+        print(f"⚠️ API request failed: {url}\nError: {e}")
+        return None
 
-def search_protein_databases(protein_name):
-    """Fetch protein details from multiple sources."""
-    return {
-        "uniprot": fetch_api_data(API_ENDPOINTS["uniprot"], {"query": protein_name, "format": "json"}),
-        "ncbi_entrez": fetch_api_data(API_ENDPOINTS["ncbi_entrez"], {"db": "gene", "term": protein_name, "retmode": "json"}),
-        "string_db": fetch_api_data(API_ENDPOINTS["string_db"], {"identifiers": protein_name, "species": 9606}),
-        "clinvar": fetch_api_data(API_ENDPOINTS["clinvar"], {"db": "clinvar", "term": protein_name, "retmode": "json"}),
-        "omim": fetch_api_data(API_ENDPOINTS["omim"], {"search": protein_name, "format": "json"}),
-        "disgenet": fetch_api_data(f"{API_ENDPOINTS['disgenet']}/gda/gene/{protein_name}?format=json"),
-        "alphafold": fetch_api_data(f"{API_ENDPOINTS['alphafold']}/{protein_name}"),
-        "pdb": fetch_api_data(f"{API_ENDPOINTS['pdb']}/{protein_name}")
+def fetch_all_data(protein_name):
+    """Fetch data from multiple APIs in parallel."""
+    endpoints = {
+        "uniprot": (API_ENDPOINTS["uniprot"], {"query": protein_name, "format": "json"}),
+        "omim": (API_ENDPOINTS["omim"], {"search": protein_name, "format": "json"}),
+        "disgenet": (f"{API_ENDPOINTS['disgenet']}/gda/gene/{protein_name}?format=json", None),
+        "chembl": (f"{API_ENDPOINTS['chembl']}/target/search/{protein_name}.json", None),
+        "faers": (API_ENDPOINTS["faers"], {"search": f"patient.drug.openfda.substance_name:{protein_name}", "limit": 5}),
+        "clinical_trials": (API_ENDPOINTS["clinical_trials"], {"expr": protein_name, "fmt": "json"}),
+        "gtex": (f"{API_ENDPOINTS['gtex']}?geneId={protein_name}&datasetId=gtex_v8", None),
+        "hpa": (f"{API_ENDPOINTS['hpa']}{protein_name}", None),
+        "proteomicsdb": (f"{API_ENDPOINTS['proteomicsdb']}?name={protein_name}", None)
     }
+    
+    data = {}
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_key = {executor.submit(fetch_api_data, url, params): key for key, (url, params) in endpoints.items()}
+        for future in concurrent.futures.as_completed(future_to_key):
+            key = future_to_key[future]
+            try:
+                data[key] = future.result()
+            except Exception as e:
+                print(f"⚠️ Error fetching {key}: {e}")
+                data[key] = None
+    return data
 
-def search_expression_databases(protein_name):
-    """Fetch protein expression details from multiple sources."""
-    return {
-        "gtex": fetch_api_data(f"{API_ENDPOINTS['gtex']}/{protein_name}"),
-        "hpa": fetch_api_data(f"{API_ENDPOINTS['hpa']}{protein_name}"),
-        "fantom5": fetch_api_data(f"{API_ENDPOINTS['fantom5']}{protein_name}"),
-        "ensembl": fetch_api_data(f"{API_ENDPOINTS['ensembl']}{protein_name}", {"expand": "1"}),
-        "proteomicsdb": fetch_api_data(f"{API_ENDPOINTS['proteomicsdb']}?protein_name={protein_name}")
-    }
+def format_protein_data(protein_name, protein_data):
+    """Format API results into structured content for Llama3."""
+
+    def safe_get(data, keys, default="N/A"):
+        """Safely extract nested values from JSON response."""
+        for key in keys:
+            if isinstance(data, dict) and key in data:
+                data = data[key]
+            else:
+                return default
+        return data
+
+    formatted_text = f"### Protein: {protein_name}\n"
+
+    formatted_text += f"\n**UniProt Summary:** {safe_get(protein_data['uniprot'], ['results', 0, 'comment'], 'No data available')}"
+    formatted_text += f"\n**OMIM Disease Associations:** {safe_get(protein_data['omim'], ['omim', 'entryList', 0, 'entry', 'titles', 'preferredTitle'], 'No data available')}"
+    formatted_text += f"\n**DisGeNET Disease Links:** " + ", ".join(
+        [d.get("disease_name", "N/A") for d in (protein_data.get("disgenet") or [])[:5]]
+    )
+    formatted_text += f"\n**ChEMBL Drugs:** " + ", ".join(
+        [d.get("molecule_chembl_id", "N/A") for d in (protein_data.get("chembl", {}).get("molecules") or [])[:5]]
+    )
+    formatted_text += f"\n**FAERS Adverse Events:** " + ", ".join(
+        [d["term"] for d in (protein_data.get("faers", {}).get("results") or [])[:5]]
+    )
+    formatted_text += f"\n**Clinical Trials:** " + ", ".join(
+        [d.get("title", "N/A") for d in (protein_data.get("clinical_trials", {}).get("FullStudiesResponse", {}).get("FullStudies") or [])[:3]]
+    )
+    formatted_text += f"\n**Expression Data (GTEx, HPA, ProteomicsDB):** {safe_get(protein_data['gtex'], ['data'], 'No expression data available')}"
+
+    return formatted_text
 
 def chat_with_ollama(prompt):
-    """Generate AI response using Ollama (Llama3) with streaming output."""
+    """Generate AI response using Ollama (Llama3)."""
     payload = {
         "model": "llama3",
         "prompt": prompt,
@@ -70,41 +108,29 @@ def chat_with_ollama(prompt):
         "top_p": 0.95,
         "stream": True
     }
-    response = requests.post(API_ENDPOINTS["ollama"], json=payload, stream=True)
+    try:
+        response = requests.post(API_ENDPOINTS["ollama"], json=payload, stream=True, timeout=15)
+        response.raise_for_status()
 
-    full_response = ""
-    for line in response.iter_lines():
-        if line:
-            try:
-                chunk = json.loads(line.decode("utf-8"))
-                full_response += chunk.get("response", "")
-                if chunk.get("done", False):
-                    break
-            except Exception as ex:
-                st.error("Error parsing streaming chunk: " + str(ex))
-    return full_response
+        full_response = ""
+        for line in response.iter_lines():
+            if line:
+                try:
+                    chunk = json.loads(line.decode("utf-8"))
+                    full_response += chunk.get("response", "")
+                    if chunk.get("done", False):
+                        break
+                except Exception as ex:
+                    print(f"⚠️ Error parsing response chunk: {ex}")
+        return full_response
+    except requests.RequestException as e:
+        print(f"⚠️ Ollama API request failed: {e}")
+        return "⚠️ AI response unavailable due to API error."
 
-def get_protein_details(protein_name):
-    """Fetch protein details and assess therapeutic target risks using multi-turn AI processing."""
-    print(f"Searching for protein: {protein_name}...\n")
+if __name__ == "__main__":
+    protein_name = input("Enter a protein name or UniProt ID: ")
+    protein_data = fetch_all_data(protein_name)
+    formatted_data = format_protein_data(protein_name, protein_data)
 
-    protein_data = search_protein_databases(protein_name)
-    expression_data = search_expression_databases(protein_name)
-
-    sections = {
-        "Function & Disease Role": f"Describe the biological function, signaling pathways, and disease involvement of {protein_name}. Include known oncogenic mutations and associated cancers.",
-        "Drug & Therapy Considerations": f"Summarize approved drugs, inhibitors, and therapeutic strategies for targeting {protein_name}. Discuss resistance mechanisms and alternative drug strategies, including combination therapies, repurposed drugs, and next-generation inhibitors.",
-        "Pitfalls & Safety Risks": f"Identify potential safety risks, resistance mechanisms, and treatment failures associated with targeting {protein_name}. Highlight FDA warnings and reported adverse effects.",
-        "Target-Mediated vs. Drug-Mediated Toxicity": f"Analyze toxicity profiles from FAERS, SIDER, CTD, and knockout studies. Distinguish between target-mediated toxicity (due to {protein_name}'s biological function) and drug-mediated toxicity (off-target effects).",
-        "In Vitro & In Vivo Studies": f"Summarize experimental data from ChEMBL, Open Targets, and CTD. Highlight in vitro functional assays and in vivo tumor models related to {protein_name}.",
-        "Knockout & Knock-In Studies": f"Summarize findings from knockout and knock-in models from MGI, IMPC, and PubMed. Explain the role of {protein_name} in normal physiology and disease models.",
-        "Protein Expression & Alternative Transcripts": f"Summarize expression data from GTEx, HPA, FANTOM5, and ProteomicsDB. Indicate whether {protein_name} is ubiquitously expressed or tissue-specific, and analyze alternative transcript variants.",
-        "Final Conclusion": f"Summarize the overall therapeutic potential, risks, and challenges of targeting {protein_name}. Discuss next-generation approaches, such as PROTACs, bispecific antibodies, or alternative pathway inhibition."
-    }
-
-    for section, prompt in sections.items():
-        print(f"\n Generating AI response for: {section}")
-        print(chat_with_ollama(prompt))
-
-protein_name = input("Enter a protein name or UniProt ID: ")
-get_protein_details(protein_name)
+    print("\n🔬 **Final Conclusion** 🔬")
+    print(chat_with_ollama(f"{formatted_data}\n\nProvide a deep analysis on the therapeutic significance, potential risks, and future research directions for {protein_name}."))
