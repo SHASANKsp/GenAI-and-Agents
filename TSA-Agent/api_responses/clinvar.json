@@ -1,0 +1,44 @@
+{
+    "header": {
+        "type": "esearch",
+        "version": "0.3"
+    },
+    "esearchresult": {
+        "count": "5362",
+        "retmax": "20",
+        "retstart": "0",
+        "idlist": [
+            "3767231",
+            "3767177",
+            "3766516",
+            "3765176",
+            "3765175",
+            "3765174",
+            "3765172",
+            "3765171",
+            "3765170",
+            "3765169",
+            "3765168",
+            "3765167",
+            "3765166",
+            "3764957",
+            "3764955",
+            "3764954",
+            "3764952",
+            "3764950",
+            "3764949",
+            "3764948"
+        ],
+        "translationset": [],
+        "translationstack": [
+            {
+                "term": "TP53[All Fields]",
+                "field": "All Fields",
+                "count": "5362",
+                "explode": "N"
+            },
+            "GROUP"
+        ],
+        "querytranslation": "TP53[All Fields]"
+    }
+}
