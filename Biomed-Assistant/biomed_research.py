@@ -1,75 +1,107 @@
-import requests
-import chromadb
-from sentence_transformers import SentenceTransformer
+import os
+import time
+from Bio import Entrez
+from langchain_ollama import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
 from langchain_community.llms import Ollama
 from langchain.chains.summarize import load_summarize_chain
+from langchain.prompts import PromptTemplate
+# Set your contact email for NCBI
+Entrez.email = "shasankashekharpadhi@gmail.com"
 
-# Load Local Llama 3 Model
-llm = Ollama(model="llama3")
+CHROMA_DIR = "chroma_db"
+MODEL_NAME = "llama3"
 
-# Load Local Embedding Model
-embedding_model = SentenceTransformer("BAAI/bge-base-en")
 
-# Function to Fetch Papers from PubMed
-def fetch_pubmed_papers(query, max_results=5):
-    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
-    
-    response = requests.get(base_url, params=params)
-    paper_ids = response.json()["esearchresult"]["idlist"]
-    
+
+def fetch_pubmed_papers(query, max_results=100):
+    print(f"🔍 Searching PubMed for: '{query}' ...")
+    search = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
+    result = Entrez.read(search)
+    ids = result["IdList"]
+    print(f"✅ Found {len(ids)} papers.")
+
     papers = []
-    for paper_id in paper_ids:
-        details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={paper_id}&retmode=json"
-        details_response = requests.get(details_url).json()
-        paper_info = details_response["result"][paper_id]
-        
-        title = paper_info["title"]
-        pubdate = paper_info.get("pubdate", "Unknown")
-        papers.append({"id": paper_id, "title": title, "pubdate": pubdate})
+    for idx, pmid in enumerate(ids):
+        print(f"📥 Fetching paper {idx + 1}/{len(ids)} (PMID: {pmid}) ...")
+        try:
+            handle = Entrez.efetch(db="pubmed", id=pmid, rettype="xml")
+            record = Entrez.read(handle)
+            article = record["PubmedArticle"][0]
+            title = article["MedlineCitation"]["Article"]["ArticleTitle"]
+            abstract = article["MedlineCitation"]["Article"].get("Abstract", {}).get("AbstractText", [""])[0]
 
+            papers.append({
+                "pmid": pmid,
+                "title": title,
+                "abstract": abstract
+            })
+        except Exception as e:
+            print(f"❌ Error processing PMID {pmid}: {e}")
+        time.sleep(0.34)  # Respect NCBI rate limit
+
+    print(f"📚 Total papers fetched: {len(papers)}")
     return papers
 
-# Function to Create and Store Embeddings in ChromaDB
-def create_vector_store(texts):
-    chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    collection = chroma_client.get_or_create_collection(name="research_papers")
+def create_vector_store(papers):
+    print("📦 Creating vector store in ChromaDB ...")
+    texts = [f"Title: {p['title']}\nAbstract: {p['abstract']}" for p in papers]
+    metadatas = [{"pmid": p["pmid"], "title": p["title"], "abstract": p["abstract"]} for p in papers]
 
-    for idx, text in enumerate(texts):
-        embedding = embedding_model.encode(text).tolist()
-        collection.add(ids=[str(idx)], embeddings=[embedding], documents=[text])
+    embeddings = OllamaEmbeddings(model=MODEL_NAME)
+    vectordb = Chroma.from_texts(texts=texts, embedding=embeddings,
+                                 metadatas=metadatas, persist_directory=CHROMA_DIR)
+    vectordb.persist()
+    print("✅ Vector store created and saved.")
+    return vectordb
 
-    return collection
+def get_existing_vector_store():
+    print("📂 Loading existing vector store ...")
+    embeddings = OllamaEmbeddings(model=MODEL_NAME)
+    return Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
 
-# Function to Retrieve Relevant Papers
-def retrieve_relevant_papers(query, vector_store):
-    query_embedding = embedding_model.encode(query).tolist()
-    results = vector_store.query(
-        query_embeddings=[query_embedding], 
-        n_results=3
+def retrieve_relevant_papers(query, score_threshold=0.75, max_k=100):
+    print(f"🔎 Retrieving papers with similarity score ≥ {score_threshold} ...")
+    db = get_existing_vector_store()
+    results_with_scores = db.similarity_search_with_score(query, k=max_k)
+
+    filtered_docs = []
+    print("📊 Similarity scores:")
+    for idx, (doc, score) in enumerate(results_with_scores):
+        print(f"🔹 [{idx + 1}] Score: {score:.4f} | Title: {doc.metadata.get('title', 'No title')}")
+        if score >= score_threshold:
+            filtered_docs.append(doc)
+
+    print(f"✅ {len(filtered_docs)} papers passed similarity threshold.")
+    return filtered_docs
+
+def summarize_documents(docs):
+    print("🧠 Generating consolidated summary with LLaMA 3 ...")
+
+    llm = Ollama(model=MODEL_NAME, temperature=0.3, num_predict=4096)
+
+    # Custom biomedical summarization prompt
+    summary_prompt = PromptTemplate.from_template("""
+You are a biomedical research assistant. Based on the collection of abstracts below, write a **detailed consolidated summary** that includes:
+- Main biological concepts discussed
+- Techniques used (e.g., CRISPR, sequencing)
+- Key findings across the papers
+- Similarities or differences in findings
+- Implications for biomedical research or therapy
+
+TEXT:
+{text}
+
+SUMMARY:
+""")
+
+    chain = load_summarize_chain(
+        llm=llm,
+        chain_type="map_reduce",
+        map_prompt=summary_prompt,
+        combine_prompt=summary_prompt
     )
-    return results["documents"]
 
-# Function to Summarize Papers Using Llama 3
-def summarize_paper(text):
-    summarize_chain = load_summarize_chain(llm)
-    summary = summarize_chain.run(text)
+    summary = chain.run(docs)
+    print("✅ Summary complete.")
     return summary
-
-# End-to-End Biomedical Research Assistant
-def biomedical_research_assistant(query):
-    papers = fetch_pubmed_papers(query)
-    if not papers:
-        return "No relevant papers found."
-
-    texts = [p["title"] for p in papers]
-    vector_store = create_vector_store(texts)
-    
-    relevant_papers = retrieve_relevant_papers(query, vector_store)
-    
-    summaries = []
-    for paper in relevant_papers:
-        summary = summarize_paper(paper)
-        summaries.append(summary)
-    
-    return summaries
