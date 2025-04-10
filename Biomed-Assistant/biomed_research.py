@@ -6,13 +6,13 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.llms import Ollama
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
-# Set your contact email for NCBI
+
+# NCBI email
 Entrez.email = "shasankashekharpadhi@gmail.com"
 
+# Constants
 CHROMA_DIR = "chroma_db"
 MODEL_NAME = "llama3"
-
-
 
 def fetch_pubmed_papers(query, max_results=100):
     print(f"🔍 Searching PubMed for: '{query}' ...")
@@ -24,84 +24,96 @@ def fetch_pubmed_papers(query, max_results=100):
     papers = []
     for idx, pmid in enumerate(ids):
         print(f"📥 Fetching paper {idx + 1}/{len(ids)} (PMID: {pmid}) ...")
+        handle = Entrez.efetch(db="pubmed", id=pmid, rettype="xml")
+        record = Entrez.read(handle)
         try:
-            handle = Entrez.efetch(db="pubmed", id=pmid, rettype="xml")
-            record = Entrez.read(handle)
             article = record["PubmedArticle"][0]
             title = article["MedlineCitation"]["Article"]["ArticleTitle"]
             abstract = article["MedlineCitation"]["Article"].get("Abstract", {}).get("AbstractText", [""])[0]
-
+            print(f"📰 Title: {title}")
             papers.append({
                 "pmid": pmid,
                 "title": title,
                 "abstract": abstract
             })
         except Exception as e:
-            print(f"❌ Error processing PMID {pmid}: {e}")
-        time.sleep(0.34)  # Respect NCBI rate limit
+            print(f"⚠️ Skipping paper due to error: {e}")
+            continue
+        time.sleep(0.34)
 
     print(f"📚 Total papers fetched: {len(papers)}")
     return papers
-
-def create_vector_store(papers):
-    print("📦 Creating vector store in ChromaDB ...")
-    texts = [f"Title: {p['title']}\nAbstract: {p['abstract']}" for p in papers]
-    metadatas = [{"pmid": p["pmid"], "title": p["title"], "abstract": p["abstract"]} for p in papers]
-
-    embeddings = OllamaEmbeddings(model=MODEL_NAME)
-    vectordb = Chroma.from_texts(texts=texts, embedding=embeddings,
-                                 metadatas=metadatas, persist_directory=CHROMA_DIR)
-    vectordb.persist()
-    print("✅ Vector store created and saved.")
-    return vectordb
 
 def get_existing_vector_store():
     print("📂 Loading existing vector store ...")
     embeddings = OllamaEmbeddings(model=MODEL_NAME)
     return Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
 
-def retrieve_relevant_papers(query, score_threshold=0.75, max_k=100):
-    print(f"🔎 Retrieving papers with similarity score ≥ {score_threshold} ...")
+def store_new_papers(papers):
+    print("📦 Storing new papers in ChromaDB with deduplication ...")
+    vectordb = get_existing_vector_store()
+    existing = vectordb.get(include=["metadatas"])
+    existing_pmids = {m["pmid"] for m in existing["metadatas"]}
+
+    new_papers = [p for p in papers if p["pmid"] not in existing_pmids]
+    print(f"🧹 New unique papers to add: {len(new_papers)}")
+
+    if not new_papers:
+        print("ℹ️ No new papers to store.")
+        return
+
+    texts = [f"Title: {p['title']}\nAbstract: {p['abstract']}" for p in new_papers]
+    metadatas = [{"pmid": p["pmid"], "title": p["title"], "abstract": p["abstract"]} for p in new_papers]
+    vectordb.add_texts(texts=texts, metadatas=metadatas)
+    vectordb.persist()
+    print("✅ New papers added and persisted.")
+
+def retrieve_relevant_papers(query, top_k=25):
+    print(f"🔎 Retrieving top {top_k} most relevant papers based on distance ...")
     db = get_existing_vector_store()
-    results_with_scores = db.similarity_search_with_score(query, k=max_k)
+    results_with_scores = db.similarity_search_with_score(query, k=top_k)
 
-    filtered_docs = []
-    print("📊 Similarity scores:")
-    for idx, (doc, score) in enumerate(results_with_scores):
-        print(f"🔹 [{idx + 1}] Score: {score:.4f} | Title: {doc.metadata.get('title', 'No title')}")
-        if score >= score_threshold:
-            filtered_docs.append(doc)
+    docs = []
+    for doc, distance in results_with_scores:
+        doc.metadata["distance_score"] = round(distance, 4)  # Use raw distance
+        docs.append(doc)
 
-    print(f"✅ {len(filtered_docs)} papers passed similarity threshold.")
-    return filtered_docs
+    print("📋 Titles of retrieved papers:")
+    for idx, doc in enumerate(docs):
+        title = doc.metadata.get("title", "Unknown title")
+        score = doc.metadata.get("distance_score", 0)
+        print(f"🔹 [{idx + 1}] Title: {title} | Distance Score: {score:.4f}")
 
-def summarize_documents(docs):
+    return docs
+
+def summarize_documents(docs, query):
     print("🧠 Generating consolidated summary with LLaMA 3 ...")
 
-    llm = Ollama(model=MODEL_NAME, temperature=0.3, num_predict=4096)
+    llm = Ollama(model=MODEL_NAME, temperature=0.3, num_predict=5000)
 
-    # Custom biomedical summarization prompt
     summary_prompt = PromptTemplate.from_template("""
-You are a biomedical research assistant. Based on the collection of abstracts below, write a **detailed consolidated summary** that includes:
-- Main biological concepts discussed
-- Techniques used (e.g., CRISPR, sequencing)
-- Key findings across the papers
-- Similarities or differences in findings
-- Implications for biomedical research or therapy
+You are a biomedical research assistant.
+
+A biomedical researcher is investigating the topic: **"{query}"**.
+
+Based on the collection of abstracts provided below, write a **detailed and focused consolidated summary** that:
+- Addresses the research question or topic directly.
+- Highlights key findings, biological mechanisms, methods, and conclusions relevant to the query.
+- Avoids including information not directly related to the topic.
+- Uses scientific language suitable for a researcher or clinician.
 
 TEXT:
 {text}
 
-SUMMARY:
+CONSOLIDATED SUMMARY (focused on the query: "{query}"):
 """)
 
     chain = load_summarize_chain(
         llm=llm,
-        chain_type="map_reduce",
-        map_prompt=summary_prompt,
-        combine_prompt=summary_prompt
+        chain_type="stuff",
+        prompt=summary_prompt
     )
 
-    summary = chain.run(docs)
+    summary = chain.run({"input_documents": docs, "query": query})
     print("✅ Summary complete.")
     return summary

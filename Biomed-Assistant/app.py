@@ -1,49 +1,78 @@
 import streamlit as st
+import pandas as pd
 from biomed_research import (
     fetch_pubmed_papers,
-    create_vector_store,
+    store_new_papers,
     retrieve_relevant_papers,
     summarize_documents
 )
 
-
-st.set_page_config(page_title="Biomedical Research Assistant", layout="wide")
+st.set_page_config(page_title="🧬 Biomedical Research Assistant", layout="wide")
 st.title("🧬 Biomedical Research Assistant")
-st.markdown("Search and summarize research papers using your local **LLaMA 3** model and **ChromaDB**.")
+st.markdown("**Search PubMed, store papers in vector DB, and summarize using LLaMA 3.**")
 
-query = st.text_input("🔍 Enter your biomedical search query:", "CRISPR in cancer")
-score_threshold = st.slider("📊 Minimum similarity score to include a paper", 0.0, 1.0, 0.75, 0.01)
-max_k = st.number_input("📌 Max number of papers to search (for filtering):", min_value=10, max_value=200, value=100, step=10)
+# SECTION 1: Query Input
+st.header("🔍 Step 1: Enter Your Research Query")
+query = st.text_input("Enter your biomedical research query:")
+state_key = f"papers_fetched_{query}"
 
-if st.button("📥 Search and Summarize"):
-    if query.strip():
-        with st.spinner("🔄 Fetching papers from PubMed..."):
-            papers = fetch_pubmed_papers(query, max_results=max_k)
-            if not papers:
-                st.warning("⚠️ No papers found.")
-                st.stop()
+# Setup placeholders
+docs = []
+summary = ""
 
-        with st.spinner("📦 Creating vector store and storing papers..."):
-            create_vector_store(papers)
+# SECTION 2 & 3 side by side
+col1, col2 = st.columns(2)
 
-        with st.spinner("🔍 Retrieving relevant papers..."):
-            relevant_docs = retrieve_relevant_papers(query, score_threshold=score_threshold, max_k=max_k)
-            if not relevant_docs:
-                st.warning("⚠️ No papers matched the similarity threshold.")
-                st.stop()
+# SECTION 2: Fetch or Use Existing DB
+with col1:
+    st.subheader("📥 Step 2: Fetch or Use Existing Papers")
+    fetch_option = st.radio("Choose how to proceed:", options=["🔄 Fetch from PubMed", "📂 Use Existing Database"])
 
-        with st.spinner("🧠 Generating summary using LLaMA 3..."):
-            summary = summarize_documents(relevant_docs)
+    if fetch_option == "🔄 Fetch from PubMed":
+        if st.button("🔍 Fetch and Store Papers", key="fetch_store") and query:
+            with st.spinner("Fetching and storing papers..."):
+                papers = fetch_pubmed_papers(query, max_results=100)
+                store_new_papers(papers)
+                st.session_state[state_key] = True
+            st.success("✅ Papers fetched and stored!")
 
-        st.success("✅ Summary Ready!")
-        st.markdown("### 🧠 Consolidated Summary")
-        st.markdown(summary)
+    elif fetch_option == "📂 Use Existing Database":
+        st.info("ℹ️ You chose to use the existing stored papers.")
+        st.session_state[state_key] = True
 
-        st.download_button("📥 Download Summary (.md)", summary, file_name="biomedical_summary.md")
-
-        st.markdown("### 📚 Papers Used in Summary")
-        titles_used = [doc.metadata.get("title", "Unknown title") for doc in relevant_docs]
-        st.markdown("\n".join([f"- {t}" for t in titles_used]))
-        st.download_button("📥 Download Paper Titles", "\n".join(titles_used), file_name="used_titles.txt")
+# SECTION 3: Retrieve and Summarize
+with col2:
+    st.subheader("🧠 Step 3: Retrieve and Summarize")
+    if not st.session_state.get(state_key, False):
+        st.info("⚠️ Please complete Step 2 first.")
     else:
-        st.warning("❗ Please enter a query to proceed.")
+        top_k = st.slider("Select number of relevant papers to retrieve:", min_value=5, max_value=50, value=25)
+
+        if st.button("🧠 Generate Consolidated Summary", key="summarize"):
+            with st.spinner("Retrieving papers for summarization..."):
+                docs = retrieve_relevant_papers(query, top_k=top_k)
+
+            if docs:
+                st.markdown("### 📄 Retrieved Papers with Distance Scores")
+
+                df = pd.DataFrame([{
+                    "Title": doc.metadata.get("title", "Untitled"),
+                    "PMID": doc.metadata.get("pmid", ""),
+                    "Distance": round(doc.metadata.get("similarity_score", 0), 4),
+                    "PubMed Link": f"https://pubmed.ncbi.nlm.nih.gov/{doc.metadata.get('pmid', '')}"
+                } for doc in docs])
+
+                st.dataframe(df[["Title", "Distance", "PubMed Link"]], use_container_width=True)
+
+                csv = df.to_csv(index=False)
+                st.download_button("📄 Download Table as CSV", csv, file_name="retrieved_papers.csv")
+
+            with st.spinner("Generating summary..."):
+                summary = summarize_documents(docs, query)
+                st.session_state["last_summary"] = summary  # Save to session
+
+# OUTSIDE BOTH COLUMNS → Full width summary
+if st.session_state.get("last_summary"):
+    st.markdown("## 🧠 Consolidated Summary")
+    st.markdown(st.session_state["last_summary"])
+    st.download_button("📥 Download Summary", st.session_state["last_summary"], file_name="summary.txt")
