@@ -1,4 +1,4 @@
-
+#import
 import streamlit as st
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.chat_models import ChatOllama
@@ -15,7 +15,7 @@ def load_vector_db():
     return vectordb
 
 def run_chatbox():
-    st.title("💬 Biomedical Chatbot")
+    st.title("Biomedical Chatbot")
     vectordb = load_vector_db()
     num_docs = len(vectordb.get()["documents"])
     st.markdown(f"📊 **ChromaDB Status**: {num_docs} documents loaded.")

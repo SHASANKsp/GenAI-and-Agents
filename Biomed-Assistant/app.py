@@ -1,3 +1,4 @@
+#imports
 import streamlit as st
 import pandas as pd
 from biomed_research import (
@@ -8,33 +9,32 @@ from biomed_research import (
 )
 from chat_utils import run_chatbox
 
-# App title
-st.set_page_config(page_title="🧬 Biomedical Research Assistant", layout="wide")
-st.title("🧬 Biomedical Research Assistant")
 
-# Tab toggle between Assistant and Chatbot
+st.set_page_config(page_title="Biomedical Research Assistant", layout="wide")
+st.title("Biomedical Research Assistant")
+
+#toggle between Assistant and Chatbot
 tab_option = st.radio("Choose View Mode:", ["Assistant", "Chatbot"], horizontal=True)
 
 if tab_option == "Chatbot":
     run_chatbox()
     st.stop()
 
-# Step 1: Query Input
-st.markdown("### 📝 Step 1: Enter your research query")
+
+st.markdown("### Step 1: Enter your research query")
 query = st.text_input("Enter your biomedical research query:")
 
-# Step 2 and Step 3: Two Columns
 col1, col2 = st.columns(2)
 state_key = f"papers_fetched_{query}"
 
 with col1:
-    st.markdown("### 📥 Step 2: Fetch and Store Papers")
+    st.markdown("### Step 2: Fetch and Store Papers")
     fetch_option = st.radio(
         "Select source for summarization:",
         ["🔄 Fetch from PubMed", "📁 Use existing database"]
     )
 
-    if st.button("🚀 Proceed", key="fetch_button") and query:
+    if st.button("Proceed", key="fetch_button") and query:
         with st.spinner("Processing..."):
             if fetch_option == "🔄 Fetch from PubMed":
                 papers = fetch_pubmed_papers(query, max_results=100)
@@ -43,12 +43,12 @@ with col1:
         st.success("✅ Papers ready!")
 
 with col2:
-    st.markdown("### 🧠 Step 3: Retrieve and Summarize Papers")
+    st.markdown("### Step 3: Retrieve and Summarize Papers")
     if not st.session_state.get(state_key, False):
         st.info("⚠️ Please complete Step 2 first.")
     else:
         top_k = st.slider("Number of papers to retrieve for summarization:", 5, 50, 25)
-        if st.button("🧠 Generate Consolidated Summary", key="summarize_button"):
+        if st.button("Consolidated Summary", key="summarize_button"):
             with st.spinner("Retrieving documents..."):
                 docs = retrieve_relevant_papers(query, top_k=top_k)
 
@@ -67,7 +67,7 @@ with col2:
             with st.spinner("Generating summary..."):
                 summary = summarize_documents(docs, query)
 
-            st.markdown("## 🧠 Consolidated Summary")
-            st.markdown(summary)  # <-- Clean, no background
+            st.markdown("## Consolidated Summary")
+            st.markdown(summary)
 
             st.download_button("📥 Download Summary", summary, file_name="summary.txt")
