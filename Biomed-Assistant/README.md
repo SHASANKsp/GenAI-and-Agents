@@ -1,27 +1,44 @@
-# Biomedical Research Assistant  
-#### Retrieve and summarize biomedical research papers using Llama 3 (via Ollama) and ChromaDB for intelligent search.  
+# Biomedical Research Assistant
 
-# Features  
-Search PubMed for recent research papers  
-Retrieve contextually relevant papers using ChromaDB  
-Summarize papers locally using Llama 3 (via Ollama)  
-Fast, lightweight, and works offline (except PubMed API)  
-Interactive Streamlit UI for seamless exploration  
+A Retrieval-Augmented Generation (RAG)-powered research assistant that streamlines biomedical literature discovery, summarization, and Q&A using open-source LLM.
 
-# Running the Application  
-#### Start the Streamlit app with:  
-`streamlit run app.py `
- 
- Then, open the localhost URL in your browser.  
+This Streamlit-based application integrates PubMed search, vector similarity retrieval, and LLaMA 3-based summarization and conversational reasoning to support scientific exploration and literature review.
 
-# 🖥️ Usage  
-#### Enter a biomedical query (e.g., "CRISPR in cancer")  
-#### Click "Search & Summarize"  
-#### The app retrieves relevant papers, stores embeddings, and summarizes them  
+---
 
-# 🔍 How It Works  
-#### 1. Fetches PubMed papers related to the query  
-#### 2. Encodes papers using BAAI/bge-base-en embeddings  
-#### 3. Stores embeddings in ChromaDB  
-#### 4. Finds the most relevant papers  
-#### 5. Summarizes each paper using Llama 3 locally  
+## Key Features
+
+### Assistant Mode — Literature RAG Pipeline
+- **PubMed Search**: Query biomedical literature via NCBI Entrez API.
+- **Vector Store**: Store and deduplicate paper metadata using ChromaDB.
+- **RAG-Based Summarization**: Retrieve the top-*k* relevant papers via vector similarity search and generate a unified summary using LLaMA 3 with a         stuff summarization chain.
+
+### Chatbot Mode — AI-Powered Literature Q&A
+- Ask free-form questions about your research topic.
+- Get grounded, document-aware responses using context-relevant paper embeddings retrieved via vector similarity.
+- Powered by **Retrieval-Augmented Generation (RAG)** + **LLaMA 3** for domain-specific chat capabilities.
+
+---
+
+
+## Tech Stack
+
+- **LLMs**: LLaMA 3 (locally hosted via [Ollama](https://ollama.com/))
+- **RAG Framework**: Vector retrieval + LLM-based generation
+- **Embedding Store**: [ChromaDB](https://www.trychroma.com/) for local persistent vector storage
+- **Paper Metadata**: PubMed data via [NCBI Entrez API](https://www.ncbi.nlm.nih.gov/books/NBK25501/)
+- **UI Framework**: [Streamlit](https://streamlit.io/) for an interactive and lightweight frontend
+
+---
+
+## Notes
+LLaMA 3 must be installed via Ollama and accessible locally.  
+ChromaDB is used to persistently store embeddings of paper titles and abstracts.  
+PubMed queries are limited to 100 papers per query to avoid rate limiting.
+
+---
+
+## Future Plans
+Add support for full-text summarization  
+Add PDF parsing and ingestion  
+Add feature to select between LLMs
