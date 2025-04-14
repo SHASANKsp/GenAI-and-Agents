@@ -1,12 +1,12 @@
+#import
 import os
 import time
 import requests
 import json
 
-# Create a folder for API responses
 os.makedirs("api_responses", exist_ok=True)
 
-# List of free APIs and their test query endpoints
+#List of APIs and their test query endpoints
 APIS = {
     "uniprot": "https://rest.uniprot.org/uniprotkb/search?query=TP53",
     "ncbi_entrez": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&id=7157&retmode=json",
@@ -25,10 +25,9 @@ APIS = {
 }
 
 def fetch_api(name, url, retries=3, delay=3):
-    """Fetch data from an API with retry logic."""
     for attempt in range(1, retries + 1):
         try:
-            print(f"🔍 Fetching data from {name} (Attempt {attempt})...")
+            print(f"Fetching data from {name} (Attempt {attempt})...")
             response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -36,20 +35,15 @@ def fetch_api(name, url, retries=3, delay=3):
                 file_path = os.path.join("api_responses", f"{name}.json")
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4)
-                print(f"✅ Saved {name} data to {file_path}")
+                print(f"Saved {name} data to {file_path}")
                 return
             else:
-                print(f"⚠️ Attempt {attempt} failed for {name}: {response.status_code} - {response.reason}")
-        
+                print(f"Attempt {attempt} failed for {name}: {response.status_code} - {response.reason}")
         except requests.exceptions.RequestException as e:
-            print(f"⚠️ Attempt {attempt} failed for {name}: {e}")
-
+            print(f"Attempt {attempt} failed for {name}: {e}")
         time.sleep(delay)  # Wait before retrying
+    print(f"Failed to fetch {name} after {retries} attempts.")
 
-    print(f"❌ Failed to fetch {name} after {retries} attempts.")
-
-# Run the API tests
 for api_name, api_url in APIS.items():
     fetch_api(api_name, api_url)
-
-print("\n🎯 API testing complete! Check 'api_responses' folder for results.")
+print("\n API testing complete! Check 'api_responses' folder for results.")

@@ -1,8 +1,9 @@
+#import
 import requests
 import json
 import streamlit as st
 
-# API Base URLs
+#API URLs
 API_ENDPOINTS = {
     "uniprot": "https://rest.uniprot.org/uniprotkb/search",
     "ncbi_entrez": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
@@ -38,7 +39,7 @@ def fetch_api_data(url, params=None):
     return None
 
 def search_protein_databases(protein_name):
-    """Fetch protein details from multiple sources."""
+    """Fetch protein details"""
     return {
         "uniprot": fetch_api_data(API_ENDPOINTS["uniprot"], {"query": protein_name, "format": "json"}),
         "ncbi_entrez": fetch_api_data(API_ENDPOINTS["ncbi_entrez"], {"db": "gene", "term": protein_name, "retmode": "json"}),
@@ -51,7 +52,7 @@ def search_protein_databases(protein_name):
     }
 
 def search_expression_databases(protein_name):
-    """Fetch protein expression details from multiple sources."""
+    """Fetch protein expression details"""
     return {
         "gtex": fetch_api_data(f"{API_ENDPOINTS['gtex']}/{protein_name}"),
         "hpa": fetch_api_data(f"{API_ENDPOINTS['hpa']}{protein_name}"),
@@ -61,7 +62,7 @@ def search_expression_databases(protein_name):
     }
 
 def chat_with_ollama(prompt):
-    """Generate AI response using Ollama (Llama3) with streaming output."""
+    """Generate AI response using Llama3"""
     payload = {
         "model": "llama3",
         "prompt": prompt,
@@ -86,9 +87,8 @@ def chat_with_ollama(prompt):
 
 def get_protein_details(protein_name):
     """Fetch protein details and assess therapeutic target risks using multi-turn AI processing."""
-    print(f"🔍 Searching for protein: {protein_name}...\n")
+    print(f"Searching for protein: {protein_name}...\n")
 
-    # Fetch all data sources
     protein_data = search_protein_databases(protein_name)
     expression_data = search_expression_databases(protein_name)
 
@@ -104,9 +104,9 @@ def get_protein_details(protein_name):
     }
 
     for section, prompt in sections.items():
-        print(f"\n🔍 Generating AI response for: {section}")
+        print(f"\n Generating AI response for: {section}")
         print(chat_with_ollama(prompt))
 
-# Example Usage
+
 protein_name = input("Enter a protein name or UniProt ID: ")
 get_protein_details(protein_name)
