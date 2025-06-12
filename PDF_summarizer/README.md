@@ -1,4 +1,4 @@
-# Biomedical PDF Analysis Suite
+# Biomedical PDF Analysis Suite (Work in progress)
 
 ## **🔍 Overview**
 An end-to-end solution for transforming biomedical PDFs into structured knowledge with:
