@@ -9,6 +9,16 @@ class SessionManager:
         self.session_dir = f"sessions/{user_id}"
         os.makedirs(self.session_dir, exist_ok=True)
     
+    def get_user_sessions(self) -> List[str]:
+        """Get list of all session IDs for this user"""
+        if not os.path.exists(self.session_dir):
+            return []
+        return [
+            f.replace('.json', '') 
+            for f in os.listdir(self.session_dir) 
+            if f.endswith('.json')
+        ]
+    
     def create_session(self, project_name: str) -> str:
         """Initialize new research project"""
         session_id = f"{project_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

@@ -1,7 +1,11 @@
 from typing import Dict, List, Literal
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
-from langchain_community.llms import Ollama
+from langchain_community.llms import Ollama  # Correct import
+import pandas as pd
+import warnings
+
+warnings.filterwarnings("ignore")
 
 SUMMARY_PROMPTS = {
     "technical": """
@@ -63,7 +67,7 @@ def synthesize_papers(summaries: List[str], query: str) -> Dict:
     4. Clinical/Research Implications
     """
     
-    return llm(synthesis_prompt.format(
+    return llm.invoke(synthesis_prompt.format(
         count=len(summaries),
         query=query,
         summaries="\n\n---\n\n".join(summaries)

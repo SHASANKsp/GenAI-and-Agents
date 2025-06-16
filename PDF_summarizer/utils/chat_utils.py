@@ -1,6 +1,8 @@
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
+from langchain_ollama import Ollama
 from core.vector_db import VectorStore
+from typing import Dict, List
 
 def init_chat_session():
     """Prepare conversation chain with document context"""
@@ -25,6 +27,5 @@ def format_chat_response(response: Dict, sources: List[Dict]) -> str:
     answer = response["answer"]
     source_texts = "\n\n".join(
         f"Source {i+1} ({s['metadata']['title']}):\n{s['text'][:500]}..."
-        for i, s in enumerate(sources)
-    )
+        for i, s in enumerate(sources))
     return f"{answer}\n\n---\nREFERENCES:\n{source_texts}"

@@ -1,6 +1,7 @@
+# In pdf_processor.py
 import pdfplumber
-import pdfformatter
 import pandas as pd
+import re
 from typing import Dict, List
 
 def extract_pdf_content(pdf_path: str) -> Dict:
@@ -8,11 +9,11 @@ def extract_pdf_content(pdf_path: str) -> Dict:
     try:
         content = {"text": "", "tables": []}
         
-        # Primary extraction
         with pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
-                # Text with layout awareness
-                content["text"] += page.extract_text(layout=True) + "\n\n"
+                # Text with layout awareness - try different extraction strategies
+                text = page.extract_text(layout=True) or page.extract_text(x_tolerance=3, y_tolerance=3)
+                content["text"] += text + "\n\n"
                 
                 # Tables
                 for table in page.extract_tables():
@@ -26,9 +27,12 @@ def extract_pdf_content(pdf_path: str) -> Dict:
                             }
                         })
         
-        # Fallback for complex layouts
+        # Fallback for complex layouts - try more aggressive extraction
         if len(content["text"].split()) < 500:
-            content["text"] = pdfformatter.extract(pdf_path, mode="academic")
+            content["text"] = ""
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    content["text"] += page.extract_text(x_tolerance=10, y_tolerance=10) + "\n\n"
             
         return content
     except Exception as e:
